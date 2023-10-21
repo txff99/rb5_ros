@@ -3,12 +3,14 @@
 import math
 import time
 import rospy
-from sensor_msgs.msg import Joy
+from hw1.msg import RobotInfo
 
-class PathplanNode:
-    def __init__(self, interval=0.1, k_v=0.2, k_w=0.3, robot_vx_min=0.07, robot_vx_max=0.8, robot_vy_min=0.07, robot_vy_max=0.8, robot_w_min=0.2, robot_w_max=1.0):
-        self.pub_joy = rospy.Publisher("/joy", Joy, queue_size=1)
+class PathplannerNode:
+    def __init__(self, interval=0.1, k_v=0.5, k_w=0.9, robot_vx_min=0.07, robot_vx_max=0.3, robot_vy_min=0.07, robot_vy_max=0.3, robot_w_min=0.65, robot_w_max=2.5):
+        self.pub_robot_info = rospy.Publisher("/robot_info", RobotInfo, queue_size=1)
         self.waypoints = [(0,0,0),(-1,0,0),(-1,1,1.57),(-2,1,0),(-2,2,-1.57),(-1,1,-0.78),(0,0,0)]
+        # self.waypoints = self.waypoints[0:3]
+        print("waypoints: {}".format(self.waypoints))
         self.interval = interval
         self.k_v = k_v
         self.k_w = k_w
@@ -23,7 +25,8 @@ class PathplanNode:
         return math.sqrt((x1-x2)**2 + (y1-y2)**2)
 
     def is_near_dest(self, now_x, now_y, now_theta, end_x, end_y, end_theta):
-        return self.dist(now_x, now_y, end_x, end_y) < 0.01 and abs(end_theta-now_theta) < 0.01
+        print("r: {}, theta: {}".format(self.dist(now_x, now_y, end_x, end_y), end_theta-now_theta))
+        return self.dist(now_x, now_y, end_x, end_y) < 0.03 and abs(end_theta-now_theta) < 0.03
 
     def get_global_v_w(self, now_x, now_y, now_theta, end_x, end_y, end_theta):
         vx = (end_x-now_x) * self.k_v
@@ -63,6 +66,8 @@ class PathplanNode:
         return new_x, new_y, new_theta
     
     def clip(self, value, min_value, max_value):
+        if value == 0.0:
+            return 0.0
         sign = 1.0 if value >= 0 else -1.0
         return sign * max(min(abs(value), max_value), min_value)
 
@@ -74,37 +79,35 @@ class PathplanNode:
             end_x, end_y, end_theta = dest_waypoint
             while self.is_near_dest(now_x, now_y, now_theta, end_x, end_y, end_theta) == False:
                 vx, vy, w = self.get_global_v_w(now_x, now_y, now_theta, end_x, end_y, end_theta)
-                print("pose: ({}, {}, {}), v: ({}, {}), w:{}".format(now_x, now_y, now_theta, vx, vy, w))
                 robot_vx, robot_vy = self.calc_v_related_to_robot(vx, vy, now_theta)
-                robot_vx = self.clip(robot_vx, 0.08, 0.8)
-                robot_vy = self.clip(robot_vy, 0.08, 0.8)
+                robot_vx = self.clip(robot_vx, self.robot_vx_min, self.robot_vx_max)
+                robot_vy = self.clip(robot_vy, self.robot_vy_min, self.robot_vy_max)
+                w = self.clip(w, self.robot_w_min, self.robot_w_max)
+                print("pose: ({}, {}, {}), v: ({}, {}), w:{}".format(now_x, now_y, now_theta, robot_vx, robot_vy, w))
                 vx, vy = self.calc_v_related_to_global(robot_vx, robot_vy, now_theta)
                 now_x, now_y, now_theta = self.estimate_next_pose(now_x, now_y, now_theta, vx, vy, w)
-                self.send_control_signal(robot_vx, robot_vy, w)
+                self.send_robot_info(robot_vx, robot_vy, w)
                 time.sleep(self.interval)
             print("reach: {}".format(self.waypoints[idx+1]))
             self.stop()
-            time.sleep(self.interval)
+            time.sleep(1)
 
-    def send_control_signal(self, robot_vx, robot_vy, w):
-        plan_msg = Joy()
-        plan_msg.axes = [0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0]
-        plan_msg.buttons = [0, 0, 0, 0, 0, 0, 0, 0]
-        # TODO
-        plan_msg.axes[0] = 2.509 * robot_vy + 0.0595
-        plan_msg.axes[1] = 2.509 * robot_vx + 0.0595
-        plan_msg.axes[2] = w*0.6/0.785
-        print("robot_vx: {}, robot_vy: {}, w: {}, axes: ({}, {}, {})".format(robot_vx, robot_vy, w, plan_msg.axes[0], plan_msg.axes[1], plan_msg.axes[2]))
-        # self.pub_joy.publish(plan_msg)
+    def send_robot_info(self, robot_vx, robot_vy, wz):
+        robot_info_msg = RobotInfo()
+        robot_info_msg.vx = robot_vx
+        robot_info_msg.vy = robot_vy
+        robot_info_msg.wz = wz
+        self.pub_robot_info.publish(robot_info_msg)
 
     def stop(self):
-        plan_msg = Joy()
-        plan_msg.axes = [0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0 ,0.0]
-        plan_msg.buttons = [0, 0, 0, 0, 0, 0, 0, 0]
-        # self.pub_joy.publish(plan_msg)
+        robot_info_msg = RobotInfo()
+        robot_info_msg.vx = 0.0
+        robot_info_msg.vy = 0.0
+        robot_info_msg.wz = 0.0
+        self.pub_robot_info.publish(robot_info_msg)
 
 if __name__ == "__main__":
-    path_plan_node = PathplanNode()
-    # rospy.init_node("joy")
-    # rospy.on_shutdown(path_plan_node.stop)
-    path_plan_node.run()
+    path_planner_node = PathplannerNode()
+    rospy.init_node("robot_path_planner")
+    rospy.on_shutdown(path_planner_node.stop)
+    path_planner_node.run()
