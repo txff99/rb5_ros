@@ -6,8 +6,9 @@ import rospy
 from hw1.msg import RobotInfo
 
 class PathplannerNode:
-    def __init__(self, interval=0.1, k_v=0.5, k_w=0.9, robot_vx_min=0.07, robot_vx_max=0.3, robot_vy_min=0.07, robot_vy_max=0.3, robot_w_min=0.65, robot_w_max=2.5):
+    def __init__(self, interval=0.1, k_v=0.5, k_w=0.9, robot_vx_min=0.1, robot_vx_max=0.3, robot_vy_min=0.1, robot_vy_max=0.3, robot_w_min=0.7, robot_w_max=2.5):
         self.pub_robot_info = rospy.Publisher("/robot_info", RobotInfo, queue_size=1)
+        # self.waypoints = [(0,0,0),(-0.5,0,0),(-0.5,0.5,1.57),(-1,0.5,0),(-1,1,-1.57),(-0.5,0.5,-0.78),(0,0,0)]
         self.waypoints = [(0,0,0),(-1,0,0),(-1,1,1.57),(-2,1,0),(-2,2,-1.57),(-1,1,-0.78),(0,0,0)]
         # self.waypoints = self.waypoints[0:3]
         print("waypoints: {}".format(self.waypoints))
@@ -26,7 +27,7 @@ class PathplannerNode:
 
     def is_near_dest(self, now_x, now_y, now_theta, end_x, end_y, end_theta):
         print("r: {}, theta: {}".format(self.dist(now_x, now_y, end_x, end_y), end_theta-now_theta))
-        return self.dist(now_x, now_y, end_x, end_y) < 0.03 and abs(end_theta-now_theta) < 0.03
+        return self.dist(now_x, now_y, end_x, end_y) < 0.03 and abs(end_theta-now_theta) < 0.05
 
     def get_global_v_w(self, now_x, now_y, now_theta, end_x, end_y, end_theta):
         vx = (end_x-now_x) * self.k_v

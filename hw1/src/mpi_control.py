@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 from megapi import MegaPi
 
-
 MFR = 2     # port for motor front right
 MBL = 3     # port for motor back left
 MBR = 10    # port for motor back right
 MFL = 11    # port for motor front left
-
 
 class MegaPiController:
     def __init__(self, port='/dev/ttyUSB0', verbose=True):
@@ -84,17 +82,14 @@ class MegaPiController:
 
 if __name__ == "__main__":
     import time
-    from path_planning import 
     mpi_ctrl = MegaPiController(port='/dev/ttyUSB0', verbose=True)
-    while(true):
-        v,w = path_plan()
-        time.sleep(0.1)
     time.sleep(1)
     mpi_ctrl.carStraight(30)
     time.sleep(1)
-    mpi_ctrl.carSlide(30)
-    time.sleep(1)
-    mpi_ctrl.carRotate(30)
-    time.sleep(1)
+    # time.sleep(1)
+    # mpi_ctrl.carSlide(30)
+    # time.sleep(1)
+    # mpi_ctrl.carRotate(30)
+    # time.sleep(1)
     mpi_ctrl.carStop()
     # print("If your program cannot be closed properly, check updated instructions in google doc.")

@@ -106,12 +106,15 @@ class MegaPiController:
 if __name__ == "__main__":
     import time
     mpi_ctrl = MegaPiController(port='/dev/ttyUSB0', verbose=True)
-    # time.sleep(1)
-    # mpi_ctrl.carRotate(35)
-    # time.sleep(7.2)
-    # mpi_ctrl.carSlide(30)
-    # time.sleep(1)
-    # mpi_ctrl.carRotate(30)
-    # time.sleep(1)
+    time.sleep(1)
+    mpi_ctrl.carSlide(50)
+    time.sleep(2)
+    #mpi_ctrl.carRotate(35)
+    #time.sleep(7.2)
+    #mpi_ctrl.carSlide(30)
+   # time.sleep(1)
+
+    #mpi_ctrl.carRotate(25)
+    #time.sleep(20)
     mpi_ctrl.carStop()
     # print("If your program cannot be closed properly, check updated instructions in google doc.")
