@@ -1,32 +1,11 @@
 #!/usr/bin/env python
-"""
-Copyright 2023, UC San Diego, Contextual Robotics Institute
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-"""
 import sys
 import rospy
-from sensor_msgs.msg import Joy
+from hw1.msg import RobotInfo
 import numpy as np
 import time
 import math
 
-# from key_parser import get_key, save_terminal_settings, restore_terminal_settings
 
 class PID_plan_Node:
     def __init__(self,robot_vx_min=0.1, robot_vx_max=0.3, robot_vy_min=0.1, robot_vy_max=0.3, robot_w_min=0.7, robot_w_max=2.5):
@@ -42,6 +21,7 @@ class PID_plan_Node:
         self.robot_v_max = robot_vy_max
         self.robot_w_max = robot_w_max
         self.robot_w_min = robot_w_min
+        self.msg_buffer = []
 
         wp = []
         with open("/root/rb5_ws/src/rb5_ros/hw1/src/waypoints.txt") as f:
@@ -102,7 +82,9 @@ class PID_plan_Node:
         self.current = [current_x,current_y,current_theta]
 
     def move_to_target(self):
-
+        if pose:
+            self.current = self.msg_buffer
+            self.msg_buffer = []
         alpha, beta, r = self.compute_angle()
         # move to target
         while(not (r<0.01)):
@@ -144,13 +126,20 @@ class PID_plan_Node:
         print("finished")
         self.stop()
 
-                
+    
+
+
     def send_robot_info(self, robot_vx, robot_vy, wz):
         robot_info_msg = RobotInfo()
         robot_info_msg.vx = robot_vx
         robot_info_msg.vy = robot_vy
         robot_info_msg.wz = wz
         self.pub_robot_info.publish(robot_info_msg)
+
+    def msg_callback(self, pose_msg):
+        # translate to x,y,theta
+        pass
+
 
     # def plan(self, v, w):
     #     w = w*0.6/0.785
@@ -174,5 +163,7 @@ class PID_plan_Node:
 if __name__ == "__main__":
     path_plan_node = PID_plan_Node()
     rospy.init_node("pid_planner")
+    rospy.Subscriber("/robot_pose", Pose, path_plan_node.msg_callback, queue_size=1) 
+    
     rospy.on_shutdown(path_plan_node.stop)
     path_plan_node.run()
