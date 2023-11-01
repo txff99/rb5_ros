@@ -24,10 +24,10 @@ class RobotControllerNode:
     
     def calc_control_input(self, w_fl, w_fr, w_bl, w_br):
         
-        v_fl = sign(w_fl) * (7.4738 * abs(w_fl) + 4.3118)
-        v_fr = sign(w_fr) * (7.1953 * abs(w_fr) + 4.7908)
-        v_bl = sign(w_bl) * (6.9881 * abs(w_bl) + 5.11)
-        v_br = sign(w_br) * (6.9494 * abs(w_br) + 4.8995)
+        v_fl = sign(w_fl) * (7.4738 * abs(w_fl) + 4.3118)/0.84
+        v_fr = sign(w_fr) * (7.1953 * abs(w_fr) + 4.7908)/0.85
+        v_bl = sign(w_bl) * (6.9881 * abs(w_bl) + 5.11)/0.853
+        v_br = sign(w_br) * (6.9494 * abs(w_br) + 4.8995)/0.84
         return v_fl, v_fr, v_bl, v_br
 
     def control(self, vx, vy, wz):
@@ -42,13 +42,16 @@ class RobotControllerNode:
             self.control(robot_info_msg.vx, robot_info_msg.vy, robot_info_msg.wz)
 
     def straight(self, vx):
-        self.control(vx, 0, 0)
+        if vx>=1.0:
+            pass
+        else:
+            self.control(vx, 0, 0)
     
     def slide(self, vy):
         self.control(0, vy, 0)
     
     def rotate(self, wz):
-        self.control(0, 0, wz)
+        self.control(0, 0, wz/0.80)
     
     def stop(self):
         self.mpi_ctrl.setFourMotors(0, 0, 0, 0)
@@ -57,8 +60,8 @@ class RobotControllerNode:
 if __name__ == "__main__":
     robot_ctrl_node = RobotControllerNode()
     # time.sleep(1)
-    # robot_ctrl_node.rotate(0.65)
-    # time.sleep(1)
+    # robot_ctrl_node.rotate(1.256)
+    # time.sleep(5)
     # robot_ctrl_node.stop()
     rospy.init_node('robot_controller')
     rospy.Subscriber('/robot_info', RobotInfo, robot_ctrl_node.msg_callback, queue_size=1) 

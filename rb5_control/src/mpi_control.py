@@ -108,7 +108,7 @@ if __name__ == "__main__":
     mpi_ctrl = MegaPiController(port='/dev/ttyUSB0', verbose=True)
     time.sleep(1)
     mpi_ctrl.carSlide(50)
-    time.sleep(2)
+    time.sleep(1)
     #mpi_ctrl.carRotate(35)
     #time.sleep(7.2)
     #mpi_ctrl.carSlide(30)

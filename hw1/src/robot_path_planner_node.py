@@ -6,10 +6,10 @@ import rospy
 from hw1.msg import RobotInfo
 
 class PathplannerNode:
-    def __init__(self, interval=0.1, k_v=0.5, k_w=0.9, robot_vx_min=0.1, robot_vx_max=0.3, robot_vy_min=0.1, robot_vy_max=0.3, robot_w_min=0.7, robot_w_max=2.5):
+    def __init__(self, interval=0.1, k_v=0.5, k_w=0.9, robot_vx_min=0.1, robot_vx_max=0.3, robot_vy_min=0.1, robot_vy_max=0.5, robot_w_min=0.7, robot_w_max=2.5):
         self.pub_robot_info = rospy.Publisher("/robot_info", RobotInfo, queue_size=1)
         # self.waypoints = [(0,0,0),(-0.5,0,0),(-0.5,0.5,1.57),(-1,0.5,0),(-1,1,-1.57),(-0.5,0.5,-0.78),(0,0,0)]
-        self.waypoints = [(0,0,0),(-1,0,0),(-1,1,1.57),(-2,1,0),(-2,2,-1.57),(-1,1,-0.78),(0,0,0)]
+        self.waypoints = [(0,0,0),(1,0,0),(1,1,3.14),(0,0,0)]
         # self.waypoints = self.waypoints[0:3]
         print("waypoints: {}".format(self.waypoints))
         self.interval = interval
