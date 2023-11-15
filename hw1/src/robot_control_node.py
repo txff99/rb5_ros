@@ -59,8 +59,8 @@ class RobotControllerNode:
 
 if __name__ == "__main__":
     robot_ctrl_node = RobotControllerNode()
-    # time.sleep(1)
-    # robot_ctrl_node.rotate(1.256)
+    time.sleep(1)
+    # robot_ctrl_node.rotate(0.7)
     # time.sleep(5)
     # robot_ctrl_node.stop()
     rospy.init_node('robot_controller')
