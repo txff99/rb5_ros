@@ -1,15 +1,11 @@
 #!/usr/bin/env python
 
 import math
-import time
 import numpy as np
-from numpy import sin, cos, arctan2
-from threading import Lock
+from numpy import sin, cos
 import tf
-import matplotlib
-matplotlib.use('Agg')
-
-import matplotlib.pyplot as plt
+import time
+from threading import Lock
 
 import rospy
 from april_detection.msg import AprilTagDetectionArray
@@ -52,29 +48,12 @@ def estimate_next_pose(now_x, now_y, now_theta, vx, vy, w, interval=0.1):
     return new_x, new_y, new_theta
 
 class EKF:
-    def __init__(self, x0, P0, Q, R):
+    def __init__(self, x0, landmark_poses, Q, R):
         self.last_x = x0
-        self.last_P = P0
+        self.landmark_poses = landmark_poses
+        self.last_P = np.eye(self.last_x.shape[0])*0.01
         self.Q = Q
         self.R = R
-
-    def extend(self, n_landmarks):
-        if n_landmarks <= 0:
-            return
-        
-        original_length = self.last_x.shape[0]
-
-        init_state_est = np.zeros(n_landmarks * 3, dtype=float)
-        self.last_x = np.append(self.last_x, init_state_est)
-
-        init_covar_est = np.eye(n_landmarks * 3)
-        for i in range(n_landmarks):
-            init_covar_est[i*3, i*3] = 1.0
-            init_covar_est[i*3+1, i*3+1] = 1.0
-            init_covar_est[i*3+2, i*3+2] = 4.0
-        self.last_P = np.block([[self.last_P, np.zeros((original_length, n_landmarks*3), dtype=float)], [np.zeros((n_landmarks*3, original_length), dtype=float), init_covar_est]])
-
-        self.Q = np.pad(self.Q, ((0, n_landmarks*3), (0, n_landmarks*3)), mode='constant')
 
     def debug_print(self):
         print("x:\n{}".format(self.last_x))
@@ -86,6 +65,7 @@ class EKF:
         x_prior[0], x_prior[1], x_prior[2] = estimate_next_pose(self.last_x[0], self.last_x[1], self.last_x[2], u[0], u[1], u[2], interval)
         x_prior[2] = normalize_angle(x_prior[2])
         P_prior = self.last_P + self.Q
+        # print("x_prior: {}".format(x_prior))
 
         # if we could not measure anything, then just skip measurement update
         if z.shape[0] == 0:
@@ -102,9 +82,9 @@ class EKF:
         robot_y = x_prior[1]
         robot_theta = x_prior[2]
         for idx, landmark_id in enumerate(landmark_ids):
-            landmark_x = x_prior[3+landmark_id*3]
-            landmark_y = x_prior[3+landmark_id*3+1]
-            landmark_theta = x_prior[3+landmark_id*3+2]
+            landmark_x = self.landmark_poses[landmark_id][0]
+            landmark_y = self.landmark_poses[landmark_id][1]
+            landmark_theta = self.landmark_poses[landmark_id][2]
 
             h[idx*3+0] = cos(robot_theta) * landmark_x + sin(robot_theta) * landmark_y - cos(robot_theta) * robot_x - sin(robot_theta) * robot_y
             h[idx*3+1] = -sin(robot_theta) * landmark_x + cos(robot_theta) * landmark_y + sin(robot_theta) * robot_x - cos(robot_theta) * robot_y
@@ -119,16 +99,7 @@ class EKF:
             H[idx*3+2, 0] = 0.0
             H[idx*3+2, 1] = 0.0
             H[idx*3+2, 2] = -1.0
-
-            H[idx*3+0, 3+landmark_id*3+0] = cos(robot_theta)
-            H[idx*3+0, 3+landmark_id*3+1] = sin(robot_theta)
-            H[idx*3+0, 3+landmark_id*3+2] = 0.0
-            H[idx*3+1, 3+landmark_id*3+0] = -sin(robot_theta)
-            H[idx*3+1, 3+landmark_id*3+1] = cos(robot_theta)
-            H[idx*3+1, 3+landmark_id*3+2] = 0.0
-            H[idx*3+2, 3+landmark_id*3+0] = 0.0
-            H[idx*3+2, 3+landmark_id*3+1] = 0.0
-            H[idx*3+2, 3+landmark_id*3+2] = 1.0
+        # print("h: {}".format(h))
         H_trans = np.transpose(H)
         R_stacked = np.eye(measurement_length, dtype=float)
         for i in range(len(landmark_ids)):
@@ -140,28 +111,23 @@ class EKF:
         for j in range(len(landmark_ids)):
             tmp[j*3+2] = normalize_angle(tmp[j*3+2])
         self.last_x = x_prior + np.dot(K, tmp)
-        for i in range(self.last_x.shape[0] // 3):
-            self.last_x[i*3+2] = normalize_angle(self.last_x[i*3+2])
+        self.last_x[2] = normalize_angle(self.last_x[2])
         self.last_P = np.matmul((np.eye(state_vector_length, dtype=float) - np.matmul(K, H)), P_prior)
 
-    def get_landmark_size(self):
-        return len(self.get_landmark_pose()) // 3
-
     def get_robot_pose(self):
-        return self.last_x[:3]
+        return self.last_x
     
-    def get_landmark_pose(self):
-        return self.last_x[3:]
+    def get_landmark_poses(self):
+        return self.landmark_poses
     
     def get_cov_matrix(self):
         return self.last_P
 
 class PIDController:
-    def __init__(self, k_p, k_i, k_d, interval, integral_limit):
+    def __init__(self, k_p, k_i, k_d, integral_limit):
         self.k_p = k_p
         self.k_i = k_i
         self.k_d = k_d
-        self.interval = interval
         self.integral = 0.0
         self.integral_limit = integral_limit
         self.last_error = 0.0
@@ -178,22 +144,16 @@ class PIDController:
             self.integral = -self.integral_limit
         diff = err - self.last_error
         self.last_error = err
-        return self.k_p * err + (self.k_i * self.interval) * self.integral + (self.k_d / self.interval) * diff
+        return self.k_p * err + self.k_i * self.integral + self.k_d * diff
 
-class ControlNode:
-    def __init__(self):
-        self.known_landmark_ids = []
-        self.landmark_id2state_vector_id = {}
+class PlannerNode:
+    def __init__(self, robot_init_pose, landmark_poses):
+        self.robot_pose = np.array(robot_init_pose)
+        self.landmark_poses = landmark_poses
 
         self.mutex = Lock()
         self.landmarks_detection_results = {}
 
-        self.robot_pose = np.array([0.0, 0.0, 0.0])
-        self.landmark_poses = np.array([])
-        P0 = np.eye(3, dtype=float)
-        P0[0, 0] = 0.0
-        P0[1, 1] = 0.0
-        P0[2, 2] = 0.0
         Q = np.eye(3, dtype=float)
         Q[0, 0] = 0.01
         Q[1, 1] = 0.01
@@ -202,26 +162,22 @@ class ControlNode:
         R[0, 0] = 0.02
         R[1, 1] = 0.02
         R[2, 2] = 0.08
-        self.ekf = EKF(self.robot_pose, P0, Q, R)
+        self.ekf = EKF(self.robot_pose, self.landmark_poses, Q, R)
 
         self.pub_robot_info = rospy.Publisher("/robot_info", RobotInfo, queue_size=1)
 
         self.interval = 0.1
-        self.v_controller = PIDController(0.60, 0.0, 0.0, self.interval, 1.0)
-        self.w_controller = PIDController(0.80, 0.0, 0.0, self.interval, math.pi)
-
-        self.collect_history_data = True
-        self.robot_history_poses = [self.robot_pose]
-        self.landmarks_history_positions = []
+        self.rate = rospy.Rate(1.0/self.interval)
+        self.v_controller = PIDController(0.40, 0.0, 0.00, integral_limit=1.0)
+        self.w_controller = PIDController(0.20, 0.0, 0.02, integral_limit=math.pi/2)
 
         self.not_detected_time_length = 0
-
     
     def read_landmark_detection(self, april_detection_array_msg):
         detection_results = {}
         for detection in april_detection_array_msg.detections:
             landmark_id = detection.id
-            if landmark_id >= 10:
+            if landmark_id >= 7:
                 continue
             position = detection.pose.position
             camera_x = position.x
@@ -237,21 +193,13 @@ class ControlNode:
                     if abs(r_new - r_old) > 1.0:
                         del detection_results[landmark_id]
             self.landmarks_detection_results = detection_results
-    
-    def get_lankmark_pose_by_id(self, landmark_id):
-        landmark_poses = np.reshape(self.ekf.get_landmark_pose(), (-1, 3))
-        return landmark_poses[self.landmark_id2state_vector_id[landmark_id]]
-    
-    def get_lankmark_cov_mat_by_id(self, landmark_id):
-        cov_matrix = self.ekf.get_cov_matrix()
-        idx = self.landmark_id2state_vector_id[landmark_id]
-        return cov_matrix[3+idx*3:3+(idx+1)*3, 3+idx*3:3+(idx+1)*3]
+            # print(self.landmarks_detection_results)
     
     def is_near_waypoint(self, target_waypoint):
         r_err = math.sqrt((target_waypoint[0] - self.robot_pose[0]) ** 2 + (target_waypoint[1] - self.robot_pose[1]) ** 2)
         theta_err = normalize_angle(target_waypoint[2] - self.robot_pose[2])
         print("robot_pose: {}, target_pose: {}".format(self.robot_pose, target_waypoint))
-        return r_err, theta_err, r_err < 0.1 and abs(theta_err) < 0.2
+        return r_err, theta_err, r_err < 0.05 and abs(theta_err) < 1.0
 
     def calc_vx_vy(self, now_x, now_y, end_x, end_y, v):
         rx = end_x - now_x
@@ -271,18 +219,10 @@ class ControlNode:
         observed_landmark_ids = []
         with self.mutex:
             for landmark_id, landmark_pose in self.landmarks_detection_results.items():
-                if landmark_id not in self.known_landmark_ids:
-                    self.landmark_id2state_vector_id[landmark_id] = len(self.known_landmark_ids)
-                    self.known_landmark_ids.append(landmark_id)
-                    self.ekf.extend(1)
                 observations = np.append(observations, np.array(landmark_pose))
                 observed_landmark_ids.append(landmark_id)
-        self.ekf.update(robot_input, observations, [self.landmark_id2state_vector_id[landmark_id] for landmark_id in observed_landmark_ids], self.interval)
+        self.ekf.update(robot_input, observations, observed_landmark_ids, self.interval)
         self.robot_pose = self.ekf.get_robot_pose()
-        self.landmark_poses = np.reshape(self.ekf.get_landmark_pose(), (-1, 3))
-        if self.collect_history_data:
-            self.robot_history_poses.append(self.robot_pose)
-            self.landmarks_history_positions.append(self.landmark_poses[:,:2])
     
     def step_once(self, destination_waypoint_pose):
         r_err, theta_err, close_enough = self.is_near_waypoint(destination_waypoint_pose)
@@ -294,36 +234,20 @@ class ControlNode:
                 else:
                     self.not_detected_time_length += 1
             
-            if self.not_detected_time_length < 5:
+            if self.not_detected_time_length < 100:
                 v = self.v_controller.calc_output(r_err)
                 w = self.w_controller.calc_output(theta_err)
-                v = clip(v, 0.10, 0.16)
-                w = clip(w, 0.07/v, 1.2)
+                v = clip(v, 0.07, 0.12)
+                w = clip(w, 0.70, 1.00)
                 vx, vy = self.calc_vx_vy(self.robot_pose[0], self.robot_pose[1], destination_waypoint_pose[0], destination_waypoint_pose[1], v)
                 robot_vx, robot_vy = self.calc_v_related_to_robot(vx, vy, self.robot_pose[2])      
                 robot_input = np.array([robot_vx, robot_vy, w])
             else:
                 robot_input = np.array([0.0, 0.0, 0.85])
             self.send_robot_info(robot_input[0], robot_input[1], robot_input[2])
-            time.sleep(self.interval)
+            self.rate.sleep()
             self.update_state(robot_input)
         return close_enough
-
-
-    def goto_landmark(self, landmark_id):
-        print("go to landmark {}".format(landmark_id))
-        self.v_controller.reset()
-        self.w_controller.reset()
-
-        DIST_TO_TAG = 0.30
-
-        landmark_pose = self.get_lankmark_pose_by_id(landmark_id)
-        target_waypoint = [landmark_pose[0]-DIST_TO_TAG*cos(landmark_pose[2]), landmark_pose[1]-DIST_TO_TAG*sin(landmark_pose[2]), landmark_pose[2]]
-
-        while self.step_once(target_waypoint) == False:
-            landmark_pose = self.get_lankmark_pose_by_id(landmark_id)
-            target_waypoint = [landmark_pose[0]-DIST_TO_TAG*cos(landmark_pose[2]), landmark_pose[1]-DIST_TO_TAG*sin(landmark_pose[2]), landmark_pose[2]]
-        self.stop()
 
     def goto_waypoint(self, waypoint_pose):
         print("go to waypoint {}".format(waypoint_pose))
@@ -333,79 +257,6 @@ class ControlNode:
         while self.step_once(waypoint_pose) == False:
             pass
         self.stop()
-
-    def run_octagon(self):
-        start_time = time.time()
-        elapsed_time = 0
-        timeout = 10
-        while elapsed_time < timeout:
-            robot_input = [0.0, 0.0, 0.9]  # always spin
-            self.send_robot_info(robot_input[0], robot_input[1], robot_input[2])
-            time.sleep(self.interval)
-            self.update_state(robot_input)
-            elapsed_time = time.time() - start_time
-        self.stop()
-        time.sleep(1)
-
-        for loop in range(3):
-            self.robot_history_poses = []
-            self.landmarks_history_positions = []
-            self.landmark_poses = np.reshape(self.ekf.get_landmark_pose(), (-1, 3))
-            landmark_orientation_with_id = [(arctan2(pose[1], pose[0]), id) for id, pose in zip(self.known_landmark_ids, self.landmark_poses)]
-            landmark_orientation_with_id.sort()
-            for _, id in landmark_orientation_with_id:
-                self.goto_landmark(id)
-                time.sleep(1)
-            self.plot("octagon_loop_"+str(loop+1)+".png")
-            for landmark_id in self.known_landmark_ids:
-                pose = self.get_lankmark_pose_by_id(landmark_id)
-                cov_matrix = self.get_lankmark_cov_mat_by_id(landmark_id)
-                print("landmark {}:".format(landmark_id))
-                print("pose: {}".format(pose))
-                print("cov_matrix: {}".format(cov_matrix))
-
-    def run_square(self):
-        waypoints = [[1.0, 0.0, 0.0], [1.0, 2.0, 1.57], [0.0, 2.0, 3.14], [0.0, 0.0, -1.57], [0.0, 0.0, 0.0]]
-        for loop in range(3):
-            self.robot_history_poses = []
-            self.landmarks_history_positions = []
-            for waypoint in waypoints:
-                self.goto_waypoint(waypoint)
-                time.sleep(1)
-            self.plot("square_loop_"+str(loop+1)+".png")
-            for landmark_id in self.known_landmark_ids:
-                pose = self.get_lankmark_pose_by_id(landmark_id)
-                cov_matrix = self.get_lankmark_cov_mat_by_id(landmark_id)
-                print("landmark {}:".format(landmark_id))
-                print("pose: {}".format(pose))
-                print("cov_matrix: {}".format(cov_matrix))
-
-    def plot(self, file_path="map.png"):
-        plot_colors = ['blue', 'orange', 'green', 'purple', 'brown', 'pink', 'gray', 'cyan', 'black', 'olive']
-        if self.collect_history_data:
-            plt.plot([p[0] for p in self.robot_history_poses], [p[1] for p in self.robot_history_poses], color='red')
-            points = []
-            for idx, landmark_pose in enumerate(self.landmark_poses):
-                xx = []
-                yy = []
-                for p in self.landmarks_history_positions:
-                    if idx < p.shape[0]:
-                        xx.append(p[idx][0])
-                        yy.append(p[idx][1])
-                point = plt.scatter(xx, yy, color=plot_colors[idx])
-                points.append(point)
-            plt.legend(points, tuple(self.known_landmark_ids), scatterpoints=1)
-        else:
-            plt.scatter(self.robot_pose[0], self.robot_pose[1], color='red')
-            plt.arrow(self.robot_pose[0], self.robot_pose[1], 0.05*cos(self.robot_pose[2]), 0.05*sin(self.robot_pose[2]), color='black')
-            points = []
-            for idx, landmark_pose in enumerate(self.landmark_poses):
-                point = plt.scatter(landmark_pose[0], landmark_pose[1], color=plot_colors[idx])
-                points.append(point)
-                plt.arrow(landmark_pose[0], landmark_pose[1], 0.05*cos(landmark_pose[2]), 0.05*sin(landmark_pose[2]), color='black')
-            plt.legend(points, tuple(self.known_landmark_ids), scatterpoints=1)
-        plt.savefig(file_path)
-        plt.close()
         
     def send_robot_info(self, robot_vx, robot_vy, wz):
         robot_info_msg = RobotInfo()
@@ -416,13 +267,48 @@ class ControlNode:
 
     def stop(self):
         self.send_robot_info(0.0, 0.0, 0.0)
-            
 
 if __name__ == "__main__":
-    robot_control_node = ControlNode()
-    rospy.init_node("robot_control_node")
-    rospy.Subscriber("/apriltag_detection_array", AprilTagDetectionArray, robot_control_node.read_landmark_detection, queue_size=1)
-    rospy.on_shutdown(robot_control_node.stop)
+    rospy.init_node("hw4_test_node")
+
+    robot_start_pose = [0.0, 0.0, 0.78]
+    landmark_poses = {
+        0: [1.4, 0.0, 0.0],
+        1: [1.0, 2.65, math.pi/2],
+        2: [-0.47, 2.0, math.pi],
+        3: [0.0, -0.56, -math.pi/2],
+        4: [0.32, 1.00, 0.0],
+        5: [0.48, 0.82, math.pi/2],
+        6: [1.32, 0.93, 0.0],
+    }
+    test_node = PlannerNode(robot_start_pose, landmark_poses)
+    
+    rospy.Subscriber("/apriltag_detection_array", AprilTagDetectionArray, test_node.read_landmark_detection, queue_size=1)
+    rospy.on_shutdown(test_node.stop)
 
     time.sleep(0.5)
-    robot_control_node.run_octagon()
+    # waypoint_list = [
+    #     [0.0,0.0],
+    #     [0.22000000000000003,-0.009999999999999988],
+    #     [0.32000000000000023,0.09000000000000001],
+    #     [0.36645695364238423,0.13645695364238408],
+    #     [0.42000000000000004,0.13141304347826077],
+    #     [0.6958753551136362,0.14365855823863635],
+    #     [0.9191525423728812,0.5808474576271188],
+    #     [1.011111111111111,0.79],
+    #     [0.9361111111111111,1.39],
+    #     [0.8979999999999999,1.49],
+    #     [0.7446666666666665,1.79],
+    #     [0.841509433962264,1.89],
+    # ]
+    shortest_path = [
+        [0.0,0.0],
+        [0.8,0.8],
+        [0.9,1.4],
+    ]
+    path = shortest_path
+    for i in range(1, len(path)):
+        orientation = math.atan2(path[i][1]-path[i-1][1], path[i][0]-path[i-1][0])
+        test_node.goto_waypoint(path[i]+[orientation])
+    test_node.goto_waypoint([1.0, 2.0, 1.57])
+    
