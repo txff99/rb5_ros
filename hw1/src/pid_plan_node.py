@@ -13,7 +13,7 @@ KA_DEFAULT = 8.0/30
 KB_DEFAULT = -0.5/30
 
 class PID_plan_Node:
-    def __init__(self,robot_vx_min=0.1, robot_vx_max=0.2, robot_vy_min=0.1, robot_vy_max=0.5, robot_w_min=0.5, robot_w_max=2.5):
+    def __init__(self,robot_vx_min=0.1, robot_vx_max=0.12, robot_vy_min=0.1, robot_vy_max=0.5, robot_w_min=0.5, robot_w_max=1.2):
         # pass
         self.pub_robot_info = rospy.Publisher("/robot_info", RobotInfo, queue_size=1)
         self.pub_combined_pose = rospy.Publisher("/combined_pose", RobotPose, queue_size=1)
@@ -33,7 +33,7 @@ class PID_plan_Node:
         self.msg_buffer = []
 
         wp = []
-        with open("/root/rb5_ws/src/rb5_ros/hw1/src/hw2.txt") as f:
+        with open("/root/rb5_ws/src/rb5_ros/hw4/src/waypoints.txt") as f:
             for i in f.readlines():
                 wp.append([float(x) for x in i[:-1].split(',')])
         self.wp = [[x[0] for x in wp], [x[1] for x in wp], [x[2] for x in wp]]
@@ -81,6 +81,7 @@ class PID_plan_Node:
         # constrain alpha and beta to be -pi to pi
         alpha = np.arctan2(np.sin(alpha),np.cos(alpha))
         beta = np.arctan2(np.sin(beta),np.cos(beta))
+        print("alpha:{} beta:{}".format(alpha,beta))
         return alpha,beta,r
 
     def compute_current_position(self,alpha,beta,r):
@@ -118,7 +119,7 @@ class PID_plan_Node:
             print("pose{} reached".format(ith_target-1))
             alpha, beta, r = self.compute_angle()
             v,w = self.control(r,alpha,beta)
-            
+            print("v:{},w:{}".format(v,w))
             # get new status
             alpha,beta,r = self.compute_next_status(v,w,alpha,beta,r)
             self.compute_current_position(alpha,beta,r)
@@ -127,12 +128,12 @@ class PID_plan_Node:
             time.sleep(0.1)
 
         #get correct pose
-        while abs(self.angle_diff())>0.1:
-            print("position{} reached".format(ith_target))
-            self.correct_pose()
-            self.send_robot_info(0,0,1.256*w/abs(w))
-            self.current[2] = self.current[2] + 1.2*w/abs(w)*self.timestamp
-            time.sleep(0.1)
+        # while abs(self.angle_diff())>0.1:
+        #     print("position{} reached".format(ith_target))
+        #     self.correct_pose()
+        #     self.send_robot_info(0,0,1.256*w/abs(w))
+        #     self.current[2] = self.current[2] + 1.2*w/abs(w)*self.timestamp
+        #     time.sleep(0.1)
         time.sleep(1)
         # self.current[2] = current_theta
 

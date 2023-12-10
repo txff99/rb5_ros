@@ -14,13 +14,17 @@ class RobotPoseNode:
     def __init__(self):
         self.pub_pose = rospy.Publisher("/robot_pose", RobotPose, queue_size=1)
         self.apriltag_original_pose = {}
-        self.apriltag_config = {'7':[[0.0,1.0,0.28],0.0,0.0,3*np.pi/4],
+        self.apriltag_config = {
+                       '7':[[0.0,1.0,0.28],0.0,0.0,3*np.pi/4],
                        '8':[[1.0,1.5,0.145],0.0,0.0,np.pi/2],
                        '9':[[2.0,0.0,0.28],0.0,0.0,0,0],
                        '0':[[1.4,0.0,0.18],0.0,0.0,0.0],
                        '1':[[1.0,2.65,0.18],0.0,0.0,np.pi/2],
                        '2':[[-0.47,2.0,0.184],0.0,0.0,np.pi],
-                       '3':[[0.0,-0.56,0.255],0.0,0.0,-np.pi/2]}
+                       '3':[[0.0,-0.56,0.255],0.0,0.0,-np.pi/2],
+                       '4': [[0.38, 1.06,0], 0.0,0.0,0.0],
+                       '5': [[0.56, 0.86,0], 0.0,0.0,math.pi/2],
+                       '6': [[1.32, 0.93,0], 0.0,0.0,0.0],}
         # april tag world pose
         # camera to robot
         self.edit_april_tag_pose()
@@ -78,14 +82,15 @@ class RobotPoseNode:
 
     def read_msg(self,april_detection_array_msg):
         detection = april_detection_array_msg.detections[0]
-        print(detection)
+        # print(detection)
         q = detection.pose.orientation
         p = detection.pose.position
         dist = math.sqrt(p.x**2 + p.z**2)
         quaternion = (q.x, q.y, q.z, q.w)
-        pitch,yaw,roll = tf.transformations.euler_from_quaternion(quaternion)
+        roll, pitch, yaw = tf.transformations.euler_from_quaternion(quaternion)
         # print("x:{} y:{} z:{}".format(p.x,p.y,p.z))
         # print("dist: {}".format(dist))
+        print("x: {}, y: {}, z: {}".format(p.x, p.y, p.z))
         print("roll: {}, pitch: {}, yaw: {}".format(roll, pitch, yaw))
         
     def calc_pose(self,tag,q,p):
@@ -140,7 +145,7 @@ class RobotPoseNode:
 if __name__ == "__main__":
     robot_pose_node = RobotPoseNode()
     rospy.init_node('robot_pose_parser')
-    # detection_array_msg = rospy.wait_for_message("/apriltag_detection_array", AprilTagDetectionArray, timeout=1.0)
-    # robot_pose_node.read_msg(detection_array_msg)
+    detection_array_msg = rospy.wait_for_message("/apriltag_detection_array", AprilTagDetectionArray, timeout=1.0)
+    robot_pose_node.run(detection_array_msg)
     rospy.Subscriber("/apriltag_detection_array", AprilTagDetectionArray, robot_pose_node.run, queue_size=1)
     rospy.spin()        
