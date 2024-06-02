@@ -1,5 +1,7 @@
 # rb5_ros
 
+**Demo link**: [https://www.youtube.com/watch?v=wfkvRIn8F2c](https://www.youtube.com/watch?v=wfkvRIn8F2c)
+
 This repository contains a number of ROS/ROS2 nodes for various robotics applications that can operate in real-time on the Qualcomm Robotics RB5 platform. This project is work in progress and contains packages for detection, SLAM, and control. Additional documentation on supported platforms and sensors can be found on the [documentation](https://autonomousvehiclelaboratory.github.io/RB5_Robotics_Tutorials/) pages.
 
 The project has generously been supported by Qualcomm. The code and associated data is released under the MIT license. 
